@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Production-grade App Store Platform Schema
+// Supports publishers, apps, releases, reviews, billing, and analytics
 
 generator client {
   provider = "prisma-client-js"
@@ -10,7 +10,7 @@ datasource db {
 }
 
 // ──────────────────────────────────────────────
-// User
+// User & Profile
 // ──────────────────────────────────────────────
 
 model User {
@@ -25,18 +25,14 @@ model User {
 
   displayName     String?
   givenName       String?
-  middleName      String?
   familyName      String?
   picture         String?
   locale          String?   @default("en")
   zoneinfo        String?
-  birthdate       String? // OIDC claim, kept as YYYY-MM-DD string
-  gender          String? // used in matchmaking (e.g. "male" | "female" | "non-binary")
-  address         Json? // OIDC address claim (structured)
 
   blocked         Boolean   @default(false)
   mfaEnabled      Boolean   @default(false)
-  mfaSecret       String? // TOTP secret, must be encrypted at app layer
+  mfaSecret       String?
 
   lastLoginAt     DateTime?
   createdAt       DateTime  @default(now())
@@ -48,6 +44,9 @@ model User {
   clients         Client[]
   subscriptions   Subscription[]
   authorizationCodes AuthorizationCode[]
+  publisherMembers PublisherMember[]
+  appReviews      AppReview[]
+  auditLogs       AuditLog[]
 
   @@index([blocked])
   @@index([createdAt])
@@ -60,9 +59,9 @@ model User {
 
 model Client {
   id                      String     @id
-  userId                  String? // owning developer/account; null for first-party/system clients
+  userId                  String?
   name                    String?
-  secretHash              String?    // hashed; null for public clients (PKCE, auth_method = "none")
+  secretHash              String?
   logo                    String?
   website                 String?
   policyUri               String?
@@ -89,12 +88,12 @@ model Client {
 
 model RefreshToken {
   id                String    @id @default(cuid())
-  tokenHash         String    @unique // never store raw token; hash (e.g. SHA-256) at app layer
+  tokenHash         String    @unique
   userId            String
   clientId          String
   scope             String[]  @default([])
-  family            String? // rotation family id, for theft/reuse detection
-  replacedByTokenId String? // points to the token this was rotated into
+  family            String?
+  replacedByTokenId String?
   expiresAt         DateTime
   revokedAt         DateTime?
   createdAt         DateTime  @default(now())
@@ -146,7 +145,6 @@ model AuthorizationCode {
   @@index([userId])
   @@index([clientId])
   @@index([expiresAt])
-
   @@map("oauth_authorization_codes")
 }
 
@@ -173,7 +171,221 @@ model Session {
 }
 
 // ──────────────────────────────────────────────
-// Billing
+// Publisher
+// ──────────────────────────────────────────────
+
+model Publisher {
+  id              String   @id @default(cuid())
+  name            String   @db.VarChar(255)
+  slug            String   @unique @db.VarChar(64)
+  description     String?  @db.Text
+  website         String?  @db.VarChar(255)
+  email           String?  @db.VarChar(255)
+  logo            String?  @db.VarChar(2000)
+  verified        Boolean  @default(false)
+  verifiedAt      DateTime?
+  taxId           String?  @db.VarChar(50)
+  country         String?  @db.VarChar(2)
+  billingEmail    String?  @db.VarChar(255)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  members         PublisherMember[]
+  apps            App[]
+  paymentMethods  PaymentMethod[]
+  invoices        Invoice[]
+
+  @@index([slug])
+  @@index([verified])
+  @@index([createdAt])
+  @@map("publishers")
+}
+
+model PublisherMember {
+  id              String   @id @default(cuid())
+  publisherId     String
+  userId          String
+  role            PublisherRole @default(MEMBER)
+  joinedAt        DateTime @default(now())
+
+  publisher       Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([publisherId, userId])
+  @@index([publisherId])
+  @@index([userId])
+  @@map("publisher_members")
+}
+
+// ──────────────────────────────────────────────
+// Apps
+// ──────────────────────────────────────────────
+
+model App {
+  id                String   @id @default(cuid())
+  publisherId       String
+  name              String   @db.VarChar(255)
+  packageName       String?  @db.VarChar(255)
+  bundleId          String?  @db.VarChar(255)
+  slug              String   @db.VarChar(100)
+  description       String?  @db.Text
+  longDescription   String?  @db.Text
+  category          String   @default("GAMES")
+  subcategory       String?
+  tags              String[] @default([])
+  ageRating         String   @default("3+")
+  privacyPolicyUrl  String?  @db.VarChar(2000)
+  termsUrl          String?  @db.VarChar(2000)
+  supportEmail      String?  @db.VarChar(255)
+  supportUrl        String?  @db.VarChar(2000)
+  website           String?  @db.VarChar(2000)
+
+  icon              String?  @db.VarChar(2000)
+  featureGraphic    String?  @db.VarChar(2000)
+  screenshots       String[] @default([])
+  videos            String[] @default([])
+
+  status            AppStatus @default(DRAFT)
+  visibility        AppVisibility @default(PRIVATE)
+  countries         String[] @default(["US"])
+
+  price             Int?
+  currency          String @default("USD")
+  pricingModel      PricingModel @default(FREE)
+  isFree            Boolean @default(true)
+
+  version           String   @default("1.0.0")
+  buildNumber       Int      @default(1)
+  minimumOsVersion  String?
+  targetOsVersion   String?
+  languages         String[] @default(["en"])
+  permissions       String[] @default([])
+
+  downloads         Int      @default(0)
+  installs          Int      @default(0)
+  activeUsers       Int      @default(0)
+  averageRating     Float    @default(0)
+  ratingCount       Int      @default(0)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+  publishedAt       DateTime?
+
+  publisher         Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+  releases          Release[]
+  reviews           AppReview[]
+  subscriptions     Subscription[]
+  analytics         AppAnalytics[]
+
+  @@unique([publisherId, slug])
+  @@index([publisherId])
+  @@index([status])
+  @@index([visibility])
+  @@index([category])
+  @@index([createdAt])
+  @@map("apps")
+}
+
+model Release {
+  id              String    @id @default(cuid())
+  appId           String
+  version         String    @db.VarChar(50)
+  buildNumber     Int
+  name            String    @db.VarChar(255)
+  notes           String?   @db.Text
+  status          ReleaseStatus @default(DRAFT)
+  track           ReleaseTrack  @default(PRODUCTION)
+
+  apkUrl          String?   @db.VarChar(2000)
+  aabUrl          String?   @db.VarChar(2000)
+  ipaUrl          String?   @db.VarChar(2000)
+  apkSize         Int?
+  checksumHash    String?   @db.VarChar(128)
+
+  rolloutPercent  Float     @default(100)
+  isRolledBack    Boolean   @default(false)
+  rolledBackAt    DateTime?
+
+  approvalStatus  ApprovalStatus @default(PENDING)
+  approvalNotes   String?   @db.Text
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  publishedAt     DateTime?
+
+  app             App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, buildNumber])
+  @@index([appId])
+  @@index([status])
+  @@index([track])
+  @@index([createdAt])
+  @@map("releases")
+}
+
+// ──────────────────────────────────────────────
+// Reviews & Ratings
+// ──────────────────────────────────────────────
+
+model AppReview {
+  id          String    @id @default(cuid())
+  appId       String
+  userId      String
+  title       String    @db.VarChar(255)
+  content     String    @db.Text
+  rating      Int
+  helpful     Int       @default(0)
+  notHelpful  Int       @default(0)
+  reportCount Int       @default(0)
+  hidden      Boolean   @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, userId])
+  @@index([appId])
+  @@index([userId])
+  @@index([rating])
+  @@index([createdAt])
+  @@map("app_reviews")
+}
+
+// ──────────────────────────────────────────────
+// Uploads
+// ──────────────────────────────────────────────
+
+model Upload {
+  id          String    @id @default(cuid())
+  userId      String?
+  key         String    @unique @db.VarChar(500)
+  filename    String    @db.VarChar(500)
+  mimeType    String    @db.VarChar(100)
+  size        Int
+  checksumHash String?   @db.VarChar(128)
+  virusScanStatus VirusScanStatus @default(PENDING)
+  virusScanedAt DateTime?
+  url         String?   @db.VarChar(2000)
+  expiresAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("uploads")
+}
+
+// ──────────────────────────────────────────────
+// Billing & Subscriptions
 // ──────────────────────────────────────────────
 
 model Subscription {
@@ -187,16 +399,115 @@ model Subscription {
   currency    String             @default("USD") @db.VarChar(3)
   startedAt   DateTime           @default(now())
   expiresAt   DateTime?
+  renewsAt    DateTime?
   cancelledAt DateTime?
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  app         App   @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
   @@index([appId])
   @@index([expiresAt])
   @@map("subscriptions")
+}
+
+model PaymentMethod {
+  id              String    @id @default(cuid())
+  publisherId     String
+  type            PaymentMethodType
+  provider        String
+  providerPaymentMethodId String
+  last4           String?
+  expiresAt       DateTime?
+  isDefault       Boolean   @default(false)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  publisher       Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  @@index([publisherId])
+  @@index([type])
+  @@map("payment_methods")
+}
+
+model Invoice {
+  id              String    @id @default(cuid())
+  publisherId     String
+  invoiceNumber   String    @unique
+  status          InvoiceStatus @default(DRAFT)
+  totalCents      Int
+  currency        String    @default("USD")
+  dueAt           DateTime?
+  paidAt          DateTime?
+  invoiceUrl      String?   @db.VarChar(2000)
+  notes           String?   @db.Text
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  publisher       Publisher @relation(fields: [publisherId], references: [id], onDelete: Cascade)
+
+  @@index([publisherId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("invoices")
+}
+
+// ──────────────────────────────────────────────
+// Analytics
+// ──────────────────────────────────────────────
+
+model AppAnalytics {
+  id              String    @id @default(cuid())
+  appId           String
+  date            DateTime
+  downloads       Int       @default(0)
+  installs        Int       @default(0)
+  activeUsers     Int       @default(0)
+  uninstalls      Int       @default(0)
+  crashes         Int       @default(0)
+  revenue         Int       @default(0)
+  country         String?
+  device          String?
+  osVersion       String?
+
+  createdAt       DateTime  @default(now())
+
+  app             App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, date, country, device, osVersion])
+  @@index([appId])
+  @@index([date])
+  @@map("app_analytics")
+}
+
+// ──────────────────────────────────────────────
+// Audit Logs
+// ──────────────────────────────────────────────
+
+model AuditLog {
+  id              String    @id @default(cuid())
+  userId          String?
+  action          String    @db.VarChar(100)
+  resourceType    String    @db.VarChar(100)
+  resourceId      String?   @db.VarChar(100)
+  changes         Json?
+  ipAddress       String?   @db.VarChar(50)
+  userAgent       String?   @db.Text
+
+  createdAt       DateTime  @default(now())
+
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
 
 // ──────────────────────────────────────────────
@@ -207,6 +518,57 @@ enum ClientType {
   WEB
   NATIVE
   SPA
+}
+
+enum PublisherRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum AppStatus {
+  DRAFT
+  IN_REVIEW
+  REJECTED
+  APPROVED
+  PUBLISHED
+  SUSPENDED
+  REMOVED
+}
+
+enum AppVisibility {
+  PRIVATE
+  PUBLIC
+  UNLISTED
+}
+
+enum PricingModel {
+  FREE
+  PAID
+  SUBSCRIPTION
+  FREEMIUM
+}
+
+enum ReleaseStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  ROLLED_BACK
+}
+
+enum ReleaseTrack {
+  INTERNAL
+  ALPHA
+  BETA
+  PRODUCTION
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_CHANGES
 }
 
 enum SubscriptionType {
@@ -220,4 +582,27 @@ enum SubscriptionStatus {
   CANCELLED
   EXPIRED
   PAST_DUE
+}
+
+enum VirusScanStatus {
+  PENDING
+  SCANNING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+enum PaymentMethodType {
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_ACCOUNT
+  PAYPAL
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
 }

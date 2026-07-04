@@ -1,10 +1,20 @@
-/** @format */
-
-import { Controller, Get, Redirect } from "@nestjs/common";
+import { Controller, Get } from "@nestjs/common";
 
 @Controller()
 export class AppController {
-    @Get()
-    @Redirect("https://www.sytacle.com")
-    getIndex() {}
+  @Get()
+  getIndex(): string {
+    return "Hello World!";
+  }
+
+  @Get("health")
+  getHealth(): { success: boolean; data: { status: string; service: string } } {
+    return {
+      success: true,
+      data: {
+        status: "ok",
+        service: "core-api",
+      },
+    };
+  }
 }
