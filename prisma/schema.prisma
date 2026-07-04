@@ -1,0 +1,223 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────
+// User
+// ──────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  username        String?   @unique @db.VarChar(32)
+  email           String    @unique @db.VarChar(255)
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  phoneNumber     String?   @unique @db.VarChar(20)
+  phoneVerified   Boolean   @default(false)
+  passwordHash    String?
+
+  displayName     String?
+  givenName       String?
+  middleName      String?
+  familyName      String?
+  picture         String?
+  locale          String?   @default("en")
+  zoneinfo        String?
+  birthdate       String? // OIDC claim, kept as YYYY-MM-DD string
+  gender          String? // used in matchmaking (e.g. "male" | "female" | "non-binary")
+  address         Json? // OIDC address claim (structured)
+
+  blocked         Boolean   @default(false)
+  mfaEnabled      Boolean   @default(false)
+  mfaSecret       String? // TOTP secret, must be encrypted at app layer
+
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  refreshTokens   RefreshToken[]
+  accessTokens    AccessToken[]
+  sessions        Session[]
+  clients         Client[]
+  subscriptions   Subscription[]
+  authorizationCodes AuthorizationCode[]
+
+  @@index([blocked])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ──────────────────────────────────────────────
+// OAuth / OIDC
+// ──────────────────────────────────────────────
+
+model Client {
+  id                      String     @id
+  userId                  String? // owning developer/account; null for first-party/system clients
+  name                    String?
+  secretHash              String?    // hashed; null for public clients (PKCE, auth_method = "none")
+  logo                    String?
+  website                 String?
+  policyUri               String?
+  tosUri                  String?
+  redirectUris            String[]   @default([])
+  scopes                  String[]   @default([])
+  grants                  String[]   @default([])
+  type                    ClientType @default(WEB)
+  tokenEndpointAuthMethod String     @default("client_secret_basic")
+  disabled                Boolean    @default(false)
+
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessions      Session[]
+  refreshTokens RefreshToken[]
+  accessTokens  AccessToken[]
+  authorizationCodes AuthorizationCode[]
+
+  @@index([userId])
+  @@map("oauth_clients")
+}
+
+model RefreshToken {
+  id                String    @id @default(cuid())
+  tokenHash         String    @unique // never store raw token; hash (e.g. SHA-256) at app layer
+  userId            String
+  clientId          String
+  scope             String[]  @default([])
+  family            String? // rotation family id, for theft/reuse detection
+  replacedByTokenId String? // points to the token this was rotated into
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([expiresAt])
+  @@index([family])
+  @@map("oauth_refresh_tokens")
+}
+
+model AccessToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  clientId  String
+  scope     String[]  @default([])
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([expiresAt])
+  @@map("oauth_access_tokens")
+}
+
+model AuthorizationCode {
+  id                String   @id @default(cuid())
+  codeHash          String   @unique
+  userId            String
+  clientId          String
+  redirectUri       String
+  scope             String[] @default([])
+  codeChallenge     String?
+  codeChallengeMethod String?
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([expiresAt])
+
+  @@map("oauth_authorization_codes")
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  userId       String
+  clientId     String
+  userIp       String?
+  userDevice   String?
+  userAgent    String?
+  active       Boolean   @default(false)
+  expiresAt    DateTime
+  lastActiveAt DateTime  @updatedAt
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@index([clientId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+// ──────────────────────────────────────────────
+// Billing
+// ──────────────────────────────────────────────
+
+model Subscription {
+  id          String             @id @default(cuid())
+  userId      String
+  appId       String
+  name        String
+  type        SubscriptionType   @default(TRIAL)
+  status      SubscriptionStatus @default(ACTIVE)
+  priceCents  Int?
+  currency    String             @default("USD") @db.VarChar(3)
+  startedAt   DateTime           @default(now())
+  expiresAt   DateTime?
+  cancelledAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([appId])
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+// ──────────────────────────────────────────────
+// Enums
+// ──────────────────────────────────────────────
+
+enum ClientType {
+  WEB
+  NATIVE
+  SPA
+}
+
+enum SubscriptionType {
+  TRIAL
+  RECURRING
+  ONETIME
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+}
