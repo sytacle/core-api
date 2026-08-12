@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-import { Body, Controller, Post } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Post,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { RegisterDto } from "./dto/register.dto";
@@ -48,7 +55,9 @@ export class AuthController {
   }
 
   @Get("me")
-  async me() {
-    
+  async me(@Headers("authorization") authorization?: string) {
+    if (!authorization?.startsWith("Bearer "))
+      throw new UnauthorizedException("Missing bearer token");
+    return this.authService.me(authorization.slice(7));
   }
 }

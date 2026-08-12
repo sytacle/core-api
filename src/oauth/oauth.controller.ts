@@ -9,7 +9,10 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Request as ExpressRequest, Response as ExpressResponse } from "express";
+import type {
+  Request as ExpressRequest,
+  Response as ExpressResponse,
+} from "express";
 import OAuth2Server from "@node-oauth/oauth2-server";
 import { OAuthService } from "./oauth.service";
 import { OAuthGuard, RequireScopes } from "./guards/oauth.guard";
@@ -73,7 +76,11 @@ export class OAuthController {
       return;
     }
 
-    const result = await this.oauth.introspectToken(token, undefined, client_id);
+    const result = await this.oauth.introspectToken(
+      token,
+      undefined,
+      client_id,
+    );
     if (!result) {
       res.status(HttpStatus.OK).json({ active: false });
       return;
@@ -104,7 +111,9 @@ export class OAuthController {
       email: token.user?.email,
       name: token.user?.displayName,
       scope: (token.scope || []).join(" "),
-      iat: Math.floor(token.accessTokenExpiresAt.getTime() / 1000 - 4 * 60 * 60),
+      iat: Math.floor(
+        token.accessTokenExpiresAt.getTime() / 1000 - 4 * 60 * 60,
+      ),
       exp: Math.floor(token.accessTokenExpiresAt.getTime() / 1000),
     });
   }

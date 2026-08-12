@@ -35,7 +35,15 @@ export class AuthService {
 
     try {
       const user = await this.prisma.user.create({
-        data: { email: body.email, passwordHash, emailVerified: false },
+        data: {
+          email: body.email,
+          passwordHash,
+          emailVerified: false,
+          givenName: body.givenName,
+          familyName: body.familyName,
+          displayName:
+            body.displayName ?? `${body.givenName} ${body.familyName}`,
+        },
       });
 
       const { accessToken, refreshToken } = await this.generateTokens(
@@ -60,7 +68,7 @@ export class AuthService {
   async login(body: LoginDto) {
     try {
       const user = await this.prisma.user.findUnique({
-        where: { email: body.email }
+        where: { email: body.email },
       });
 
       if (!user) {
@@ -109,6 +117,28 @@ export class AuthService {
     ]);
 
     return { accessToken, refreshToken };
+  }
+
+  async me(accessToken: string) {
+    const payload = await this.jwtService.verifyAsync(accessToken, {
+      secret: process.env.JWT_SECRET,
+    });
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        displayName: true,
+        givenName: true,
+        familyName: true,
+        picture: true,
+        emailVerified: true,
+        createdAt: true,
+      },
+    });
+    if (!user) throw new Error("User not found");
+    return { success: true, results: user };
   }
 
   async refresh(refreshToken: string) {
