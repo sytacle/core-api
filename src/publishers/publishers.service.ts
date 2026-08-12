@@ -5,7 +5,7 @@ export class PublishersService {
   getPublisherOverview() {
     return {
       success: true,
-      data: {
+      results: {
         id: "publisher-1",
         name: "Example Publisher",
         apps: 0,

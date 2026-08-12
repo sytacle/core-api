@@ -11,7 +11,7 @@ COPY nest-cli.json ./
 RUN npm ci
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 

@@ -10,11 +10,12 @@ async function bootstrap() {
   try {
     const app = await NestFactory.create(AppModule);
 
-    app.setGlobalPrefix("v1", { exclude: ["/", "health"] });
+    app.setGlobalPrefix("v3", { exclude: ["/", "health"] });
     app.enableCors({
       origin: true,
       credentials: true,
     });
+    
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
