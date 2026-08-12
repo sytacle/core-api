@@ -15,7 +15,7 @@ async function bootstrap() {
       origin: true,
       credentials: true,
     });
-    
+
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -26,7 +26,9 @@ async function bootstrap() {
 
     const config = new DocumentBuilder()
       .setTitle("App Store Platform API")
-      .setDescription("Production-grade backend for app publishing and distribution")
+      .setDescription(
+        "Production-grade backend for app publishing and distribution",
+      )
       .setVersion("1.0")
       .addBearerAuth()
       .build();
